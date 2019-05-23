@@ -217,7 +217,7 @@ var app = new Vue({
 				var k = 0;
 				if(this.els.length > 0){
 					for(var i=0;i<4;i++){
-						if(this.els[i].classList[0] != 'defc'){
+						if(this.els[i].classList[0].substring(0, 1) == 'c'){
 							k = k + 1;
 						}
 					}
