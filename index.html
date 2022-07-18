@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<title>d3</title>
+	<script src="https://d3js.org/d3.v7.min.js"></script>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+<style>
+body {
+  font: 14px Arial, sans-serif;
+  //overflow-x: scroll;  
+}
+
+.line {
+  fill: none;
+  stroke: black;
+  stroke-width: 1px;
+}
+
+#container{
+	width:1780px;
+	margin:20px auto;
+}
+
+
+svg{
+	//background-image: url(wow.png);
+	width:100%;
+}
+
+//text.numb { font: bold 32px sans-serif; fill: #FF1493; cursor: default; text-anchor: middle;}
+text.numb { font: bold 11px sans-serif; fill: #808080; cursor: default; text-anchor: middle;}
+
+.road{
+	stroke: #909090;
+    stroke-width: 5px;
+}
+
+</style>
+</head>
+<body class="w3-white">
+<div id="container">
+</div>
+
+
+<script src="polygons.js"></script>
+<script src="numbers.js"></script>
+<script src="roads.js"></script>
+<script src="active.js"></script>
+<script>
+var this_color = null;
+var coordinates = [];
+var pnt;
+var svg = d3.select('#container').append('svg')
+    .attr('width', 1770)
+    .attr('height', 1180);
+
+var poly = [];
+polygons.forEach(function(d) {
+	var array = JSON.parse("[" + d['polygon'] + "]");
+	poly.push(array);
+});
+
+svg.selectAll("polygon")
+	.data(polygons)
+	.enter().append("polygon")
+		.attr("points", function(d){return d['polygon'];})
+		.attr("stroke", "#404040")
+		.attr("stroke-width",1)
+		.attr("fill", function(d){
+			if(G1.includes(d['num'])){
+				return "#ADD8E6";
+			}else if(G2.includes(d['num'])){
+				return "#7aca7a";
+			}else if(G3.includes(d['num'])){
+				//return "#7CFC00";
+				return "#00FF00";
+			}
+			return "#F5F5F5";
+			
+		})
+		.on("mouseover", function(d){
+			//d3.select(this).style("fill", "#C0C0C0").style("opacity", 0.6);
+			d3.select(this).style("opacity", 0.6);
+			//console.log(d3.select(this)._groups[0][0].__data__['num']);
+		})
+		.on("mouseout", function(){
+			//d3.select(this).style("fill", "#F5F5F5");			
+			d3.select(this).style("opacity", 1);
+		});
+		
+svg.selectAll("text")
+	.data(centroids)
+	.enter().append("text")
+		.attr("x", function(d){ return d.cx})
+		.attr("y", function(d){ return d.cy})
+		.attr("class", "numb")
+		.text(function(d){ return d.num});
+		
+		
+svg.selectAll("line")
+	.data(roads)
+	.enter().append("line")
+		.attr("x1", function(d){ return d[0]})
+		.attr("y1", function(d){ return d[1]})
+		.attr("x2", function(d){ return d[2]})
+		.attr("y2", function(d){ return d[3]})
+		.attr("class", "road");
+		
+
+svg.selectAll("image")
+	.data([0])
+	.enter().append("svg:image")
+		.attr('x', 730)
+		.attr('y', 176)
+		.attr('width', 40)
+		.attr('height', 40)
+		.attr("xlink:href", "korona.png");
+		
+		
+
+
+
+</script>
+</body>
+</html>
