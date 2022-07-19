@@ -1,4 +1,5 @@
-const payments = {'value': 198000,'count': 56};
+const payments = {'value': 202000,'count': 56};
+
 
 const G = {
  26: {'name': 'Михаил', 'value': 2000, 'g': 'G1'},
