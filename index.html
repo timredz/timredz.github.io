@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<!-- saved from url=(0036)https://www.moex.com/PreciousMetals/ -->
+<html>
+<meta charset="utf-8">
+	<link rel="stylesheet" href="css/main.css">
+	<!-- Load d3.js -->
+	<script src="js/d3.min.js"></script>
+	<script src="js/jquery-3.7.1.min.js"></script>
+	<script src="js/train_data.js"></script>
+	<script src="js/train_functions.js"></script>
+	<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+</meta>
+
+<style>
+#container{
+	width: 2110px;
+	height: 100vh;
+	margin: 0 auto;
+}
+#headline{
+	width:100%;
+	height:50px;
+	min-height:50px;
+}
+#info{
+	width: 300px;
+	height: 100vh;
+	float:left;
+	overflow-y: scroll;
+}
+#info::-webkit-scrollbar {
+  display: none;
+}
+
+
+#map{
+	width: 1800px;
+	height: 100vh;
+	float:left;
+}
+
+.train:hover{
+	cursor:pointer;
+}
+
+.div-table {
+  display: table;         
+  width: auto;         
+  border-spacing: 4px; /* cellspacing:poor IE support for  this */
+}
+.div-table-row {
+  display: table-row;
+  width: auto;
+  clear: both;
+}
+.div-table-col {
+  float: left; /* fix for  buggy browsers */
+  display: table-column;         
+  width: 90px;         
+  background-color: #ddc;
+  padding:3px;
+}
+
+table {
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.cargo {
+	margin:2px;
+	padding: 1px 3px;
+	border-radius: 4px;
+}
+.cargo_count {
+	float: right;
+}
+.metal { background-color: #ddc; }
+.coal { background-color: #cdd; }
+.grain { background-color: #cdc; }
+.wood { background-color: #dcd; }
+
+.train_row:hover{
+	cursor:pointer;
+	background-color: #f2f2f2;
+}
+
+.from_style{
+	color: #444;
+	font-size:14px;
+}
+.to_style{
+	color: orange;
+	font-size:18px;
+}
+</style>
+
+<body>
+	<div id="container">
+		<div id="headline"></div>
+		<div id="info"></div>
+		<div id="map">
+			<svg id="my_dataviz" width="1800" height="1200"></svg>
+		</div>
+	<div>
+	
+	<!--style="background-color:#7fcdff"-->
+
+</body>
+<script>
+$(document).ready(function(){
+	
+	
+	$("#headline").click(function(event) {
+		/*countriesGroup
+			.selectAll("rect")
+			.attr("x", d => to_xy(d["coord"])[0] - tsize/2 + getRandom(10))
+			.attr("y", d => to_xy(d["coord"])[1] - tsize/2 + getRandom(10))
+			.attr("width", tsize)
+			.attr("height", tsize);*/
+	});
+});
+
+// The svg
+const svg = d3.select("svg"),
+    width = +svg.attr("width"),
+    height = +svg.attr("height");
+
+// Map and projection
+//const projection = d3.geoEquirectangular()
+const projection = d3.geoMercator()
+	.center([90, 60])
+    .scale(600)
+    .translate([width / 2, height / 2]);
+	
+
+var zoom_level = 1;
+
+const zoom = d3.zoom()
+    .on('zoom', (event) => {
+	  
+      countriesGroup.attr('transform', event.transform);
+	  prev_zoom_level = zoom_level;
+	  zoom_level = event.transform['k'];
+	  
+	  // zoom переход x1->x2
+	  if((prev_zoom_level < 2) & (zoom_level >= 2)){
+		map_change_x1_x2();
+	  }
+	  
+	  // zoom переход x2->x1
+	  if((prev_zoom_level >= 2) & (zoom_level < 2)){
+		map_change_x2_x1();
+	  }
+	  
+	  // zoom переход x2->x3
+	  if((prev_zoom_level < 3) & (zoom_level >= 3)){
+		map_change_x2_x3();
+	  }
+	  
+	  // zoom переход x3->x2
+	  if((prev_zoom_level >= 3) & (zoom_level < 3)){
+		map_change_x3_x2();
+	  }
+    }).scaleExtent([1, 5]);
+	
+var prev_id;
+function highlight_item(id){
+	d3.select("tr[id='"+prev_id+"']").style("background-color", "white");
+	d3.select("tr[id='"+id+"']").style("background-color", "#F2F2F2");
+	prev_id = id;
+}
+
+
+const tsize = 10;
+d3.json("https://raw.githubusercontent.com/timredz/georussia/main/russia.geojson").then( function(country_data) {
+	
+	countries = country_data.features.filter(function(d){return d.properties.type=="country"});
+	cities = country_data.features.filter(function(d){return d.properties.type=="city"});
+	
+	countriesGroup = svg.call(zoom).append("g");
+	
+	// Draw the map
+    countriesGroup
+        .selectAll("path")
+        .data(countries)
+        .join("path")
+		.attr("class", d => d.properties.type)
+		.attr("fill", function(d){if(d.properties.name=="Russia"){return "#cdc";} return "#d7d7d7";})
+		.attr("d", d3.geoPath().projection(projection))
+		.style("stroke", "grey");
+			
+	
+	// Add city points
+	countriesGroup.append("g")
+        .selectAll("circle")
+        .data(cities)
+        .join("circle")
+		.attr("class", d => ("city_rank_" + d.properties.RANK))
+		.attr("fill", "#444")
+		.attr("cx", d => to_xy(d.geometry.coordinates)[0])
+		.attr("cy", d => to_xy(d.geometry.coordinates)[1])
+		.attr("r", d => 7-d.properties.RANK);
+		
+	
+	// City labels
+	countriesGroup.selectAll(".place-label")
+		.data(cities)
+		.enter().append("text")
+		.attr("class", d => ("place-label city_label_rank_" + d.properties.RANK))
+		.attr("transform", function(d) { return "translate(" + projection(d.geometry.coordinates) + ")"; })
+		.attr("dy", ".35em")
+		.attr("dx", d => (7-d.properties.RANK) + "px")
+		.text(d => d.properties.NAME_RU);
+
+
+	// Add trains	
+	/*countriesGroup.append("g")
+        .selectAll("rect")
+        .data(trains)
+        .join("rect")
+		.attr("id", d => d["id"])
+		.attr("class", "train")
+		.attr("fill", "#960430")
+		.attr("x", d => to_xy(d["coord"])[0] - tsize/2)
+		.attr("y", d => to_xy(d["coord"])[1] - tsize/2)
+		.attr("width", tsize)
+		.attr("height", tsize)
+		.attr("stroke", "black")
+		.attr("stroke-width", "0.2px")
+		.on("click", function(d){
+			d = d["srcElement"]["__data__"];
+			mark_train(d, this);
+			//d3.select("#info").html("#" + d.id + " " + d["info"]);
+			highlight_item(d.id);
+		}).on("mouseover", function(d){
+			d3.select(this).style("opacity", 0.5);
+		}).on("mouseout", function(){
+			d3.select(this).style("opacity", 1);
+		});*/
+		
+		
+	// draw routes
+	d3.json("https://raw.githubusercontent.com/timredz/georussia/main/all_rails4.geojson").then( function(route_data) {
+		
+		// Draw the map
+		countriesGroup
+			.append("g")
+			.selectAll("path")
+			.data(route_data["features"])
+			.join("path")
+			//.attr("class", d => d.properties.type)
+            .attr("fill", "none")
+            .attr("d", d3.geoPath().projection(projection))
+			.attr("stroke-dasharray", "2,2")
+            //.style("stroke", "white")
+			.style("stroke", "#444")
+			.style("stroke-width", "0.3px");
+		
+	});
+	
+	//train path
+	d3.json("https://raw.githubusercontent.com/timredz/georussia/main/train_path7.geojson").then( function(train_path) {
+	
+		
+		//ppps = train_path.features.filter(function(d){return d.properties.id=="17562-208-2265"});
+		//console.log(ppps);
+		const color_map = {
+			"s": "#444",
+			"b": "#C1E1C1",
+			//"f": "#5F9EA0",
+			"f": "#DFFF00",
+			"d": "#AAFF00",
+		}
+		
+		// Add city points
+		countriesGroup.append("g")
+			.selectAll("circle")
+			.data(train_path["features"])
+			.join("circle")
+			//.attr("class", function(d){console.log(d.geometry.coordinates)})
+			.attr("class", d => d.properties.id)
+			.attr("fill", function(d){return color_map[d.properties.class]})
+			.attr("opacity", 0)
+			.attr("cx", d => to_xy(d.geometry.coordinates)[0])
+			.attr("cy", d => to_xy(d.geometry.coordinates)[1])
+			.attr("r", d => 2)
+			.style("stroke", "#444")
+			.style("stroke-width", "0.3px");
+		
+	});
+	
+	
+	// trains
+	d3.json("https://raw.githubusercontent.com/timredz/georussia/main/train_positions7.geojson").then( function(train_data) {
+	
+		//console.log(train_data['features']);
+		
+		train_pos = train_data.features.filter(function(d){return d.properties.class=="p"});
+		train_dest = train_data.features.filter(function(d){return d.properties.class=="d"});
+		var prev_pathid = '0';
+		
+		all_wagons_info(train_pos);
+		
+		countriesGroup.append("g")
+			.selectAll("rect")
+			.data(train_pos)
+			.join("rect")
+			.attr("id", d => d.properties.id)
+			//.attr("class", "pos")
+			.attr("fill", "#960430")
+			.attr("x", d => to_xy(d.geometry.coordinates)[0] - tsize/2)
+			.attr("y", d => to_xy(d.geometry.coordinates)[1] - tsize/2)
+			.attr("width", tsize)
+			.attr("height", tsize)
+			.attr("stroke", "black")
+			.attr("stroke-width", "0.2px")
+			.on("click", function(d){
+				
+				d = d["srcElement"]["__data__"]["properties"];
+				mark_train(d, this);
+				console.log(d.id);
+				//d3.select("#info").html("#" + d.id + " " + d["info"]);
+				highlight_item(d.id);
+				//d3.selectAll("circle[class='dest']").style("fill", "none");
+				//d3.select("circle[id='d"+d.id+"']").style("fill", "#0096FF");
+				//d3.selectAll("circle[class='train_path_point']").style("opacity", 0);
+				//d.id = "16069-241-2331";
+				d3.selectAll("circle[class='"+prev_pathid+"']").style("opacity", 0);
+				d3.selectAll("circle[class='"+d.id+"']").style("opacity", 1);
+				prev_pathid = d.id;
+			}).on("mouseover", function(d){
+				d3.select(this).style("opacity", 0.5);
+			}).on("mouseout", function(){
+				d3.select(this).style("opacity", 1);
+			});
+			
+		
+		// event listener
+		$("tr.train_row").click(function(event) {
+		
+			id = event["currentTarget"].id;
+			console.log(id);
+			coords = find_train(id, train_pos);
+			coords = to_xy(coords);
+			coords_str = (900-coords[0]) + ", " + (600-coords[1]);
+			
+			countriesGroup.transition().duration(300).attr('transform', 'translate('+coords_str+')');
+			this_train = svg.select("rect[id='"+id+"']");
+			temp = this_train["_groups"][0][0]["__data__"];
+			mark_train2(temp, this_train);
+		});
+			
+			
+			
+		
+		// Add city points
+		/*countriesGroup.append("g")
+			.selectAll("circle")
+			.data(train_dest)
+			.join("circle")
+			.attr("id", d => "d" + d.properties.id)
+			.attr("class", "dest")
+			//.attr("fill", "#0096FF")
+			.attr("fill", "none")
+			.attr("cx", d => to_xy(d.geometry.coordinates)[0])
+			.attr("cy", d => to_xy(d.geometry.coordinates)[1])
+			.attr("r", d => 5);*/
+		
+	});
+	
+	
+});
+</script>
+
+
+</html>

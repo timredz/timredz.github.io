@@ -1,0 +1,61 @@
+text.place-label{
+	font-size: 12px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    pointer-events: none;
+	//fill: #444;
+}
+
+.city_rank_0 {
+	fill: #444;
+}
+.city_rank_1 {
+	fill: #444;
+}
+.city_rank_2 {
+	fill: #444;
+}
+.city_rank_3 {
+	fill: #444;
+}
+.city_rank_4 {
+	fill: none;
+}
+.city_rank_5 {
+	fill: none;
+}
+.city_rank_6 {
+	fill: none;
+}
+.city_rank_7 {
+	fill: none;
+}
+
+
+.city_label_rank_0 {
+	fill: #444;
+}
+.city_label_rank_1 {
+	fill: #444;
+}
+.city_label_rank_2 {
+	fill: #444;
+}
+.city_label_rank_3 {
+	fill: #444;
+}
+.city_label_rank_4 {
+	fill: none;
+}
+.city_label_rank_5 {
+	fill: none;
+}
+.city_label_rank_6 {
+	fill: none;
+}
+.city_label_rank_7 {
+	fill: none;
+}
+
+.railway{
+	stroke-width:0.5px;
+}
