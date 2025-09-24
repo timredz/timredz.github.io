@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightweight Charts - Candlestick with Indicators</title>
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        html, body {
+            font: 14px Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e1e;
+            color: white;
+        }
+
+        #container {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+
+        #chartContainer {
+            width: 100%;
+            height: calc(100vh - 50px);
+        }
+
+        #controls {
+            padding: 10px;
+            background-color: #2a2a2a;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-button {
+            padding: 8px 16px;
+            background-color: #474350;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .control-button:hover {
+            background-color: #627C85;
+        }
+
+        .control-button.active {
+            background-color: #4CAF50;
+        }
+
+        #tickerInput {
+            padding: 8px;
+            background-color: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+            font-size: 14px;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 16px;
+        }
+
+        #historyLoading {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #4CAF50;
+            font-size: 12px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: none;
+        }
+		
+		#apiKeyContainer {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    z-index: 1000;
+}
+
+#apiKeyInput {
+    padding: 6px 8px;
+    background-color: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    color: white;
+    font-size: 12px;
+    width: 200px;
+}
+
+	#saveApiKey {
+		padding: 6px 12px;
+		background-color: #474350;
+		color: white;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 12px;
+	}
+
+	#saveApiKey:hover {
+		background-color: #627C85;
+	}
+
+	.api-status {
+		font-size: 11px;
+		margin-left: 5px;
+	}
+
+	.api-status.success {
+		color: #4CAF50;
+	}
+
+	.api-status.error {
+		color: #f63538;
+	}
+		
+		
+    </style>
+</head>
+<body>
+    <div id="container">
+	<div id="apiKeyContainer">
+		<input type="password" id="apiKeyInput" placeholder="Enter API Key">
+		<button id="saveApiKey" onclick="saveApiKey()">Save</button>
+		<span id="apiStatus" class="api-status"></span>
+	</div>
+        <div id="controls">
+            <input type="text" id="tickerInput" placeholder="Enter ticker (e.g., ri)" value="ri">
+            <button class="control-button" onclick="loadData()">Load Data</button>
+            <button class="control-button" id="longBtn" onclick="toggleIndicator('long')">Long Positions</button>
+            <button class="control-button" id="shortBtn" onclick="toggleIndicator('short')">Short Positions</button>
+            <button class="control-button" id="netBtn" onclick="toggleIndicator('net')">Net Positions</button>
+            <button class="control-button" id="oiBtn" onclick="toggleIndicator('oi')">Open Interest</button>
+        </div>
+        <div id="chartContainer"></div>
+        <div id="loading" style="display: none;">Loading...</div>
+        <div id="historyLoading" style="display: none;">Loading historical data...</div>
+    </div>
+
+    <script>
+        // Global variables
+		let apiKey = null;
+		
+        let chart;
+        let candlestickSeries;
+        let volumeSeries;
+        let longPositionSeries;
+        let shortPositionSeries;
+        let netPositionSeries;
+        let oiSeries;
+
+        let currentTicker = 'ri';
+        let indicatorVisibility = {
+            long: true,
+            short: true,
+            net: true,
+            oi: true
+        };
+
+        // Historical data tracking
+        let allCandleData = [];
+        let allIndicatorData = [];
+        let earliestLoadedDate = null;
+        let isLoadingHistory = false;
+        let lastVisibleTimeRange = null;
+
+        // Initialize chart
+        function initChart() {
+            const chartContainer = document.getElementById('chartContainer');
+
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: chartContainer.clientHeight,
+                layout: {
+                    backgroundColor: '#1e1e1e',
+                    textColor: '#d1d4dc',
+                },
+                grid: {
+                    vertLines: {
+                        color: '#2B2B43',
+                        style: LightweightCharts.LineStyle.Dotted,
+                    },
+                    horzLines: {
+                        color: '#2B2B43',
+                        style: LightweightCharts.LineStyle.Dotted,
+                    },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: '#485c7b',
+                },
+                timeScale: {
+                    borderColor: '#485c7b',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            // Create candlestick series
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#30cc5a',
+                downColor: '#f63538',
+                borderDownColor: '#f63538',
+                borderUpColor: '#30cc5a',
+                wickDownColor: '#f63538',
+                wickUpColor: '#30cc5a',
+            });
+
+            // Create volume series
+            volumeSeries = chart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: {
+                    type: 'volume',
+                },
+                priceScaleId: 'volume',
+            });
+
+            chart.priceScale('volume').applyOptions({
+                scaleMargins: {
+                    top: 0.8,
+                    bottom: 0,
+                },
+            });
+
+            // Create indicator series
+            longPositionSeries = chart.addLineSeries({
+                color: 'rgba(178, 222, 39, 0.9)',
+                lineWidth: 1,
+                title: 'Long Positions',
+                priceScaleId: 'indicators',
+            });
+
+            shortPositionSeries = chart.addLineSeries({
+                color: 'rgba(242, 38, 19, 0.7)',
+                lineWidth: 1,
+                title: 'Short Positions',
+                priceScaleId: 'indicators',
+            });
+
+            netPositionSeries = chart.addLineSeries({
+                color: 'rgba(249, 105, 14, 0.7)',
+                lineWidth: 1,
+                title: 'Net Positions',
+                priceScaleId: 'indicators',
+            });
+
+            oiSeries = chart.addAreaSeries({
+                topColor: 'rgba(191, 191, 191, 0.5)',
+                bottomColor: 'rgba(191, 191, 191, 0.15)',
+                lineColor: 'rgba(191, 191, 191, 0.8)',
+                lineWidth: 1,
+                title: 'Open Interest',
+                priceScaleId: 'oi_axis',
+            });
+
+            chart.priceScale('indicators').applyOptions({
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.25,
+                },
+            });
+
+            chart.priceScale('oi_axis').applyOptions({
+                scaleMargins: {
+                    top: 0.8,
+                    bottom: 0.05,
+                },
+            });
+
+            // Subscribe to visible time range changes for historical data loading
+            chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChanged);
+
+            // Handle resize
+            window.addEventListener('resize', () => {
+                chart.applyOptions({
+                    width: chartContainer.clientWidth,
+                    height: chartContainer.clientHeight,
+                });
+            });
+        }
+
+        // Handle visible time range changes
+        function onVisibleTimeRangeChanged(newVisibleTimeRange) {
+            if (!newVisibleTimeRange) return;
+
+            lastVisibleTimeRange = newVisibleTimeRange;
+
+            // Check if we need to load more historical data
+            if (earliestLoadedDate && !isLoadingHistory) {
+                const visibleFromTime = newVisibleTimeRange.from;
+                const earliestTime = earliestLoadedDate.getTime() / 1000;
+
+                // If user is viewing close to the earliest loaded data, load more
+                const timeBuffer = 86400; // 1 day in seconds
+                if (visibleFromTime <= earliestTime + timeBuffer) {
+                    loadHistoricalData();
+                }
+            }
+        }
+
+        // Load historical data (3 days before earliest loaded date)
+        async function loadHistoricalData() {
+            if (isLoadingHistory || !earliestLoadedDate) return;
+
+            isLoadingHistory = true;
+            const historyLoading = document.getElementById('historyLoading');
+            historyLoading.style.display = 'block';
+
+            try {
+                const ticker = currentTicker;
+                const baseTicker = ticker.substr(0, 2);
+                const fullTicker = baseTicker + 'z5';
+
+                // Calculate date range (3 days before earliest loaded date)
+                const toDate = new Date(earliestLoadedDate);
+                toDate.setDate(toDate.getDate() - 1); // One day before earliest
+
+                const fromDate = new Date(toDate);
+                fromDate.setDate(fromDate.getDate() - 3); // 3 days before that
+
+                const formatDate = (date) => {
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                const dateRange = {
+                    from: formatDate(fromDate),
+                    to: formatDate(toDate)
+                };
+
+                console.log('Loading historical data from', dateRange.from, 'to', dateRange.to);
+
+                const futoiUrl = `https://apim.moex.com/iss/analyticalproducts/futoi/securities/${baseTicker}.json?from=${dateRange.from}&till=${dateRange.to}&iss.json=extended`;
+                const candlesUrl = `https://apim.moex.com/iss/datashop/algopack/fo/tradestats/${fullTicker}.json?from=${dateRange.from}&till=${dateRange.to}&iss.json=extended`;
+
+                const [futoiResponse, candlesResponse] = await Promise.all([
+					authenticatedFetch(futoiUrl),
+					authenticatedFetch(candlesUrl)
+				]);
+
+                const futoiData = await futoiResponse.json();
+                const candlesData = await candlesResponse.json();
+
+                // Process and merge the historical data
+                await processAndMergeHistoricalData(futoiData, candlesData);
+
+                // Update earliest loaded date
+                earliestLoadedDate = fromDate;
+
+            } catch (error) {
+                console.error('Error loading historical data:', error);
+            } finally {
+                isLoadingHistory = false;
+                historyLoading.style.display = 'none';
+            }
+        }
+
+        // Process and merge historical data
+        async function processAndMergeHistoricalData(futoiData, candlesData) {
+            // Process new candle data
+            let newCandleData = candlesData[1]['data'][1].map(d => {
+                const dateTime = new Date(d.tradedate + ' ' + d.tradetime);
+                return {
+                    time: dateTime.getTime() / 1000,
+                    open: d.pr_open,
+                    high: d.pr_high,
+                    low: d.pr_low,
+                    close: d.pr_close,
+                    volume: d.vol
+                };
+            });
+
+            // Process new futoi data
+            const futoiProcessed = futoiData[1]['futoi'][1].map(d => ({
+                ...d,
+                dttm: d.tradedate + ' ' + d.tradetime.substr(0, 5) + ':00',
+                pos_short: Math.abs(d.pos_short),
+                pos_net: d.pos_long + d.pos_short,
+                pos_oi: d.pos_long - d.pos_short,
+            }));
+
+            const groupedFutoi = {};
+            futoiProcessed.forEach(row => {
+                const key = row.dttm;
+                if (!groupedFutoi[key]) {
+                    groupedFutoi[key] = { dttm: row.dttm };
+                }
+                groupedFutoi[key]['pos_long_' + row.clgroup] = row.pos_long;
+                groupedFutoi[key]['pos_short_' + row.clgroup] = row.pos_short;
+                groupedFutoi[key]['pos_net_' + row.clgroup] = row.pos_net;
+                groupedFutoi[key]['pos_oi_' + row.clgroup] = row.pos_oi;
+            });
+
+            let newIndicatorData = Object.values(groupedFutoi).map(d => {
+                const dateTime = new Date(d.dttm);
+                return {
+                    time: dateTime.getTime() / 1000,
+                    longFiz: d.pos_long_FIZ || 0,
+                    shortFiz: d.pos_short_FIZ || 0,
+                    netFiz: d.pos_net_FIZ || 0,
+                    oiFiz: d.pos_oi_FIZ || 0
+                };
+            });
+
+            // Filter out data that we already have
+            const existingTimes = new Set(allCandleData.map(d => d.time));
+            newCandleData = newCandleData.filter(d => !existingTimes.has(d.time));
+            newIndicatorData = newIndicatorData.filter(d => !existingTimes.has(d.time));
+
+            if (newCandleData.length === 0) {
+                console.log('No new historical data to add');
+                return;
+            }
+
+            // Merge with existing data and sort
+            allCandleData = [...newCandleData, ...allCandleData].sort((a, b) => a.time - b.time);
+            allIndicatorData = [...newIndicatorData, ...allIndicatorData].sort((a, b) => a.time - b.time);
+
+            // Update all series with merged data
+            updateAllSeries();
+
+            console.log(`Added ${newCandleData.length} new historical candles`);
+        }
+
+        // Update all chart series with current data
+        function updateAllSeries() {
+            // Update candles
+            candlestickSeries.setData(allCandleData);
+
+            // Update volume
+            const volumeData = allCandleData.map(d => ({
+                time: d.time,
+                value: d.volume,
+                color: d.close >= d.open ? '#30cc5a80' : '#f6353880'
+            }));
+            volumeSeries.setData(volumeData);
+
+            // Update indicators
+            longPositionSeries.setData(allIndicatorData.map(d => ({
+                time: d.time,
+                value: d.longFiz
+            })));
+
+            shortPositionSeries.setData(allIndicatorData.map(d => ({
+                time: d.time,
+                value: d.shortFiz
+            })));
+
+            netPositionSeries.setData(allIndicatorData.map(d => ({
+                time: d.time,
+                value: d.netFiz
+            })));
+
+            oiSeries.setData(allIndicatorData.map(d => ({
+                time: d.time,
+                value: d.oiFiz
+            })));
+        }
+
+        // Toggle indicator visibility
+        function toggleIndicator(type) {
+            const btn = document.getElementById(type + 'Btn');
+            indicatorVisibility[type] = !indicatorVisibility[type];
+
+            btn.classList.toggle('active', indicatorVisibility[type]);
+
+            const seriesMap = {
+                long: longPositionSeries,
+                short: shortPositionSeries,
+                net: netPositionSeries,
+                oi: oiSeries
+            };
+
+            const series = seriesMap[type];
+            if (series) {
+                series.applyOptions({
+                    visible: indicatorVisibility[type]
+                });
+            }
+        }
+
+        // Get date range (today and 3 days ago)
+        function getDateRange() {
+            const today = new Date();
+            const threeDaysAgo = new Date(today);
+            threeDaysAgo.setDate(today.getDate() - 3);
+
+            const formatDate = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
+            return {
+                from: formatDate(threeDaysAgo),
+                to: formatDate(today)
+            };
+        }
+
+        // Load and process initial data
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            loading.style.display = 'block';
+
+            try {
+                const ticker = document.getElementById('tickerInput').value || 'ri';
+                currentTicker = ticker;
+                const baseTicker = ticker.substr(0, 2);
+                const fullTicker = baseTicker + 'z5';
+
+                const dates = getDateRange();
+
+                const futoiUrl = `https://apim.moex.com/iss/analyticalproducts/futoi/securities/${baseTicker}.json?from=${dates.from}&till=${dates.to}&iss.json=extended`;
+                const candlesUrl = `https://apim.moex.com/iss/datashop/algopack/fo/tradestats/${fullTicker}.json?from=${dates.from}&till=${dates.to}&iss.json=extended`;
+
+                const [futoiResponse, candlesResponse] = await Promise.all([
+                    fetch(futoiUrl),
+                    fetch(candlesUrl)
+                ]);
+
+                const futoiData = await futoiResponse.json();
+                const candlesData = await candlesResponse.json();
+
+                processAndSetData(futoiData, candlesData);
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Error loading data. Please check the ticker symbol and try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Process initial data and set to chart
+        function processAndSetData(futoiData, candlesData) {
+            // Reset global data arrays
+            allCandleData = [];
+            allIndicatorData = [];
+
+            // Process candle data
+            allCandleData = candlesData[1]['data'][1].map(d => {
+                const dateTime = new Date(d.tradedate + ' ' + d.tradetime);
+                return {
+                    time: dateTime.getTime() / 1000, // Convert to seconds
+                    open: d.pr_open,
+                    high: d.pr_high,
+                    low: d.pr_low,
+                    close: d.pr_close,
+                    volume: d.vol
+                };
+            });
+
+            // Process futoi data
+            const futoiProcessed = futoiData[1]['futoi'][1].map(d => ({
+                ...d,
+                dttm: d.tradedate + ' ' + d.tradetime.substr(0, 5) + ':00',
+                pos_short: Math.abs(d.pos_short),
+                pos_net: d.pos_long + d.pos_short,
+                pos_oi: d.pos_long - d.pos_short,
+            }));
+
+            // Group futoi data by datetime
+            const groupedFutoi = {};
+            futoiProcessed.forEach(row => {
+                const key = row.dttm;
+                if (!groupedFutoi[key]) {
+                    groupedFutoi[key] = { dttm: row.dttm };
+                }
+                groupedFutoi[key]['pos_long_' + row.clgroup] = row.pos_long;
+                groupedFutoi[key]['pos_short_' + row.clgroup] = row.pos_short;
+                groupedFutoi[key]['pos_net_' + row.clgroup] = row.pos_net;
+                groupedFutoi[key]['pos_oi_' + row.clgroup] = row.pos_oi;
+            });
+
+            // Convert to arrays for indicators
+            allIndicatorData = Object.values(groupedFutoi).map(d => {
+                const dateTime = new Date(d.dttm);
+                return {
+                    time: dateTime.getTime() / 1000,
+                    longFiz: d.pos_long_FIZ || 0,
+                    shortFiz: d.pos_short_FIZ || 0,
+                    netFiz: d.pos_net_FIZ || 0,
+                    oiFiz: d.pos_oi_FIZ || 0
+                };
+            });
+
+            // Sort data by time
+            allCandleData.sort((a, b) => a.time - b.time);
+            allIndicatorData.sort((a, b) => a.time - b.time);
+
+            // Set earliest loaded date for historical loading
+            if (allCandleData.length > 0) {
+                earliestLoadedDate = new Date(allCandleData[0].time * 1000);
+            }
+
+            // Update all series
+            updateAllSeries();
+
+            chart.timeScale().applyOptions({ rightOffset: 30 });
+
+            // Fit content
+            chart.timeScale().fitContent();
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', function() {
+            initChart();
+			loadApiKeyFromCookie();
+
+            // Set initial button states
+            Object.keys(indicatorVisibility).forEach(type => {
+                const btn = document.getElementById(type + 'Btn');
+                btn.classList.toggle('active', indicatorVisibility[type]);
+            });
+
+            // Load initial data
+            loadData();
+
+            // Handle Enter key in ticker input
+            document.getElementById('tickerInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loadData();
+                }
+            });
+        });
+		
+		// Cookie management functions
+		function setCookie(name, value, days) {
+			const expires = new Date();
+			expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+			document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+		}
+
+		function getCookie(name) {
+			const nameEQ = name + "=";
+			const ca = document.cookie.split(';');
+			for (let i = 0; i < ca.length; i++) {
+				let c = ca[i];
+				while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+				if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+			}
+			return null;
+		}
+
+		function saveApiKey() {
+			const apiKeyInput = document.getElementById('apiKeyInput');
+			const apiStatus = document.getElementById('apiStatus');
+			const inputApiKey = apiKeyInput.value.trim();
+
+			if (!inputApiKey) {
+				apiStatus.textContent = 'Please enter an API key';
+				apiStatus.className = 'api-status error';
+				return;
+			}
+
+			apiKey = inputApiKey;
+			setCookie('moex_api_key', apiKey, 7);
+			apiStatus.textContent = 'API key saved';
+			apiStatus.className = 'api-status success';
+
+			// Clear the input for security
+			apiKeyInput.value = '';
+		}
+
+		function loadApiKeyFromCookie() {
+			const savedApiKey = getCookie('moex_api_key');
+			if (savedApiKey) {
+				apiKey = savedApiKey;
+				const apiStatus = document.getElementById('apiStatus');
+				apiStatus.textContent = 'API key loaded';
+				apiStatus.className = 'api-status success';
+			}
+		}
+		
+		// Authenticated fetch function
+		async function authenticatedFetch(url) {
+			const requestOptions = {
+				method: 'GET',
+				redirect: 'follow'
+			};
+
+			if (apiKey) {
+				const myHeaders = new Headers();
+				myHeaders.append("Authorization", `Bearer ${apiKey}`);
+				requestOptions.headers = myHeaders;
+				requestOptions.body = new FormData(); // As per your sample
+			}
+
+			return fetch(url, requestOptions);
+		}
+    </script>
+</body>
+</html>
