@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<title>Candles</title>
+	<script src="https://d3js.org/d3.v7.min.js"></script>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+html, body {
+  font: 14px Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+        
+#menu-container{
+	margin-top:20px;
+	margin-bottom:10px;
+	display: block;
+	padding-left: 15px;
+}
+
+.menu-button{
+	padding: 6px 24px;
+	display: flex;
+	align-items: center;
+	color: white;
+	text-decoration: none;
+	white-space: nowrap;
+	font-size: 16px;
+	line-height: 18px;
+	background-color: #474350;
+	border-radius: 3px;
+	margin: 0 3px;
+	cursor: pointer;
+}
+
+.ul_header{
+	padding: 6px 24px;
+	display: flex;
+	align-items: center;
+	color: black;
+	text-decoration: none;
+	white-space: nowrap;
+	font-size: 32px;
+	line-height: 18px;
+	background-color: #fff;
+	margin: 0 3px;
+	font-weight: bold;
+}
+
+.menu-button:hover{
+	background-color: #627C85;
+	color: black;
+}
+
+ul{
+	display: flex;
+	margin: 4px 0px;
+	padding: 0;
+}
+
+li{
+	list-style-type: none;
+}
+
+.active-vis{
+	background-color: #ff0508;
+}
+
+
+#container{
+	width:100%;
+	height: calc(100vh - 150px);
+	min-width: 1200px;
+	max-width: 2500px;
+	min-height: 600px;
+	max-height: 1200px;
+}
+
+</style>
+</head>
+<body>
+	<div id="menu-container"></div>
+	<div id="container">
+		<canvas id="candlestickChart"></canvas>
+	</div>
+
+<script>
+let params = new URLSearchParams(document.location.search);
+let ticker = params.get("ticker");
+if(!ticker){
+	ticker = 'SBER';
+}
+
+const button_names = ["Map", "Candles", "SuperCandles", "MegaAlerts", "HI2", "FUTOI"];
+const button_links = ["map", "candles", "supercandles", "megaalerts", "hi2", "futoi"];
+
+createButtons();
+function createButtons() {
+	const container = document.getElementById('menu-container');
+	const ul = document.createElement('ul');
+	const h1 = document.createElement('li');
+	h1.className = "ul_header";
+	h1.textContent = "ALGOPACK VISUAL";
+	ul.appendChild(h1);
+
+	for (let i = 0; i <= 5; i++) {
+		const link = document.createElement('li');
+		const href = document.createElement('a');
+		href.href = `${button_links[i]}.html?ticker=${ticker}`; // Replace with actual URL
+		
+		if(button_names[i]=='Candles'){
+			href.className = 'menu-button active-vis';
+		}else{
+			href.className = 'menu-button';
+		}
+		href.textContent = `${button_names[i]}`;
+		link.appendChild(href);
+		ul.appendChild(link);
+	}
+	container.appendChild(ul);
+}
+
+let CW, CH;
+let ctx;
+let margin = {top: 50, right: 130, bottom: 80, left: 30};
+
+let overlayCanvas, overlayCtx;
+let lastX, lastY, x_step, DATA, prev_item;
+let last_price = null;
+
+draw_candles();
+
+function draw_candles(){
+	canvas = document.getElementById('candlestickChart');
+	canvasContainer = document.getElementById('container');
+	
+	canvas.width = canvasContainer.clientWidth;
+	canvas.height = canvasContainer.offsetHeight;
+	CW = canvas.width;
+	CH = canvas.height;
+	
+    ctx = canvas.getContext('2d');
+	
+	let width = canvas.width - margin.left - margin.right;
+	let height = canvas.height - margin.top - margin.bottom;
+		
+	
+	// set the ranges
+	var x = d3.scaleBand().range([margin.left, CW-margin.right]).padding(0.2);
+	var y = d3.scaleLinear().range([0.87*height+margin.top, margin.top]);
+	var y_vol = d3.scaleLinear().range([CH-margin.bottom, 0.87*height+margin.top]);
+	var x_offset = 0;
+	
+	const apiUrl = `https://apim.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities/sber/candles.json?from=2023-03-01&till=2024-11-22&interval=24&iss.json=extended`;
+	const bearerToken = "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJaVHA2Tjg1ekE4YTBFVDZ5SFBTajJ2V0ZldzNOc2xiSVR2bnVaYWlSNS1NIn0.eyJleHAiOjE3MzI4Njk4OTcsImlhdCI6MTczMDI3Nzg5NywiYXV0aF90aW1lIjoxNzMwMjc3MTUxLCJqdGkiOiJhYWY1NmY2Zi1lYjk2LTQzMzQtODY5OC1kNDhkNGZiODRjZDkiLCJpc3MiOiJodHRwczovL3NzbzIubW9leC5jb20vYXV0aC9yZWFsbXMvY3JhbWwiLCJhdWQiOlsiYWNjb3VudCIsImlzcyJdLCJzdWIiOiJmOjBiYTZhOGYwLWMzOGEtNDlkNi1iYTBlLTg1NmYxZmU0YmY3ZTozYTdjYzYxNi03NTI2LTQ3YjctYTBlMC1iYzkwMTk5YmQ3MzkiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJpc3MiLCJzZXNzaW9uX3N0YXRlIjoiZDc4MTU4YmQtOTAxZi00ZGFhLTg4NmItMzNlYWQzYjhjNjk2IiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiJdfSwicmVzb3VyY2VfYWNjZXNzIjp7ImFjY291bnQiOnsicm9sZXMiOlsibWFuYWdlLWFjY291bnQiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6Im9wZW5pZCBvZmZsaW5lX2FjY2VzcyBpc3NfYWxnb3BhY2sgcHJvZmlsZSBlbWFpbCIsInNpZCI6ImQ3ODE1OGJkLTkwMWYtNGRhYS04ODZiLTMzZWFkM2I4YzY5NiIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiaXNzX3Blcm1pc3Npb25zIjoiMTM3LCAxMzgsIDEzOSwgMTQwLCAxNjUsIDE2NiwgMTY3LCAxNjgsIDMyOSwgNDIxIiwibmFtZSI6ItCi0LjQvNGD0YAg0KDQtdC00LbQtdC_0L7QsiIsInByZWZlcnJlZF91c2VybmFtZSI6IjNhN2NjNjE2LTc1MjYtNDdiNy1hMGUwLWJjOTAxOTliZDczOSIsImdpdmVuX25hbWUiOiLQotC40LzRg9GAIiwiZmFtaWx5X25hbWUiOiLQoNC10LTQttC10L_QvtCyIn0.PfzGU_jylKnElNaRN_lx9euninDJBGq-i9EE5LHSdMbPu5Y_L1nnlzzffYeN3oJhOawvYcFdFff_Qdr2ZdbRCRGSJFqaO2EA4nmfHSwD8c_nB1c9dySlMqYaC-K2ueD836d1Bs2UGTFA9LAR50k3nn8EKtjXaz0uZ1VGLXKcDTSwqNxReZ5EGlW47Bp5JustPQe1C8BWVv_UxbE9ajTeqVvqJ7ne8lXn3zyEmcLCyG0hrEgdvQQueQSRyInDd9BO0mmVi7vh8ULDbONZALwgLdoIRPPRozgtqM03DFBUTVtHuFWLQhmt4xSL-bmyJOvct_n4m2B49C6JCVWrcz_twg";
+
+	// get the data 1
+	d3.json(apiUrl, {
+	  method: "GET",
+	  headers: {
+		"Authorization": `Bearer ${bearerToken}`,
+		"Cookie": "MPTrack=3fd54ba7.625adc9943b80; MicexTrackID=c1b268c9.623926e1de231"
+	  }
+	}).then(function(data) {
+	  data = data[1]['candles'][1];
+	  
+	  var x_dates = [];
+	  var prev_month = '00';
+	  
+	  data.forEach(function(d) {
+		  d.begin = d['begin'].substring(0, 10);
+		  if(d.begin.substring(5, 7) != prev_month){
+			x_dates.push(d.begin);
+		  }
+		  prev_month = d.begin.substring(5, 7);
+	  });
+	  
+	  DATA = data;
+	  
+	  var last_pr = data[data.length-1]['close'];
+	  
+	  // Scale the range of the data in the domains
+	  x.domain(data.map(function(d) { return d.begin; }));
+	  y.domain([0.99*d3.min(data, function(d) { return d.low; }), 1.01*d3.max(data, function(d) { return d.high; })]);
+	  y_vol.domain([d3.min(data, function(d) { return d.volume; }), d3.max(data, function(d) { return d.volume; })]);
+	  x_step = x.step();
+	  
+	  x_offset = ((width / data.length) - x.paddingInner()*x.bandwidth())/2;
+	  
+	  data.forEach((d, index) => {
+			drawCandle(d);
+			drawBar(d);
+	  });
+	  
+	  last_price = data[data.length - 1].close;
+	  const prev_last_price = data[data.length - 2].close;
+	  const pr_change = last_price/prev_last_price - 1; 
+	  
+	  //Draw ticker
+	  ctx.font = '64px Arial';
+      ctx.fillStyle = '#d3d3d3';
+	  ctx.fillText(`${ticker.toUpperCase()}, 1D`, CW/2-160, 50);
+	  
+	  drawYGridLines(y);
+	  drawXGridLines(x, x_dates, x_offset);
+
+	  // last price info
+	  last_price_hcolor = pr_change >= 0 ? 'rgb(48, 204, 90)' : 'rgb(246, 53, 56)';
+	  drawRectHighlight(y(last_price), last_price_hcolor);
+	  printLastPrice(CW-margin.right+18, y(last_price)+3, last_price + ' (' + pctChange(last_price, prev_last_price)+')', '#fff');
+	  
+	  // Create overlay canvas
+		overlayCanvas = document.createElement('canvas');
+		overlayCanvas.width = CW;
+		overlayCanvas.height = CH;
+		overlayCanvas.style.position = 'absolute';
+		overlayCanvas.style.left = canvas.offsetLeft + 'px';
+		overlayCanvas.style.top = canvas.offsetTop + 'px';
+		overlayCanvas.style.pointerEvents = 'none'; // Allow events to pass through
+		canvasContainer.appendChild(overlayCanvas);
+		overlayCtx = overlayCanvas.getContext('2d');
+
+		let animationFrameId;
+  
+	  canvas.addEventListener('mousemove', function(event) {
+		const rect = canvas.getBoundingClientRect();
+        let coord_x = event.clientX - rect.left;
+        let coord_y = event.clientY - rect.top;
+
+        if (coord_y > CH - margin.bottom) {
+            coord_y = CH - margin.bottom;
+        }
+		
+		if (coord_y < margin.top) {
+            coord_y = margin.top;
+        }
+
+        if (coord_x > CW - margin.right) {
+            coord_x = CW - margin.right;
+        }
+
+        // Cancel any pending animation frame
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+
+        // Schedule the drawing for the next animation frame
+        animationFrameId = requestAnimationFrame(() => {
+            let tindex = Math.floor((coord_x - margin.left) / x_step);
+            var item = data[tindex];
+			prev_item = data[Math.max(0, tindex-1)];
+			
+			if(item !== undefined){
+				updateOverlay(coord_x, coord_y, item);
+			}
+        });
+	
+	  });
+	});
+	
+	function updateOverlay(cx, cy, item) {
+		// Clear the entire overlay canvas
+		overlayCtx.clearRect(0, 0, CW, CH);
+		
+		// Draw position lines
+		drawPositionLines(cx, cy);
+		
+		// highlight bar
+		drawBar(item, true);
+		drawCandle(item, true);
+		printData(cx, cy, item);
+
+		// Draw rectangles and text
+		drawRectHighlight2(cy);
+		printPriceText(cx, cy, y.invert(cy));
+
+		drawRectHighlight3(cx);
+		printDateText(cx, cy, item.begin);
+	}
+	
+	function drawCandle(d, highlight=false) {
+		let this_ctx;
+		const y1 = y(d3.max([d.open, d.close]));
+		const candle = {
+			x1: x(d.begin),
+			y1: y(d3.max([d.open, d.close])),
+			cw: x.bandwidth(),
+			ch: y(d3.min([d.open, d.close])) - y1,
+			isBullish: d.close >= d.open 
+		};
+		const stick = {
+			x1: x(d.begin) + x_offset,
+			y1: y(d.low),
+			x2: x(d.begin) + x_offset,
+			y2: y(d.high),
+		};
+		
+		const bullishColor = 'rgb(48, 204, 90)'; // Green
+		const bearishColor = 'rgb(246, 53, 56)'; // Red
+		var candleColor = candle.isBullish ? bullishColor : bearishColor;
+		candleColor = highlight ? 'black' : candleColor;
+		
+		if(highlight){
+			this_ctx = overlayCtx;
+		}else{
+			this_ctx = ctx;
+		}
+		// Draw the wick
+		this_ctx.strokeStyle = candleColor;
+		this_ctx.beginPath();
+		this_ctx.moveTo(stick.x1, stick.y1);
+		this_ctx.lineTo(stick.x2, stick.y2);
+		this_ctx.stroke();
+		
+		// Draw the candle
+		this_ctx.fillStyle = candleColor;
+		this_ctx.beginPath();
+		this_ctx.rect(candle.x1, candle.y1, candle.cw, candle.ch);
+		this_ctx.fill();
+	}
+	
+	function drawBar(d, highlight=false) {
+		let this_ctx;
+		const bar = {
+						x1: x(d.begin),
+						y1: y_vol(d.volume),
+						cw: x.bandwidth(),
+						ch: CH-margin.bottom-y_vol(d.volume),
+						isBullish: d.close >= d.open 
+					};
+		const bullishColor = 'rgb(48, 204, 90)'; // Green
+		const bearishColor = 'rgb(246, 53, 56)'; // Red
+		var candleColor = bar.isBullish ? bullishColor : bearishColor;
+		candleColor = highlight ? 'black' : candleColor;
+		
+		// Draw the bar
+		if(highlight){
+			this_ctx = overlayCtx;
+		}else{
+			this_ctx = ctx;
+		}
+		this_ctx.fillStyle = candleColor;
+		this_ctx.beginPath();
+		this_ctx.rect(bar.x1, bar.y1, bar.cw, bar.ch);
+		this_ctx.fill();
+		
+	}
+}
+
+
+
+// Function to draw the lines
+function drawPositionLines(x, y) {
+	// Clear the entire overlay canvas
+    //overlayCtx.clearRect(0, 0, CW, CH);
+
+    // Set line style
+    overlayCtx.strokeStyle = 'grey';
+    overlayCtx.lineWidth = 0.5;
+
+    // Draw vertical line
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(x, margin.top);
+    overlayCtx.lineTo(x, CH - margin.bottom);
+    overlayCtx.stroke();
+
+    // Draw horizontal line
+    overlayCtx.beginPath();
+    overlayCtx.moveTo(margin.left, y);
+    overlayCtx.lineTo(CW - margin.right + 20, y);
+    overlayCtx.stroke();
+
+    // Store current positions
+    //lastX = x;
+    //lastY = y;
+	
+}
+
+
+function printData(x, y, item){
+	// Draw coordinates as text
+    overlayCtx.font = '14px Arial';
+    overlayCtx.fillStyle = 'black';
+    
+    // Round coordinates to whole numbers
+    const roundedX = Math.round(x);
+    const roundedY = Math.round(y);
+    
+    // Determine text position (adjust to keep text inside canvas)
+    const textX = x + 10 > CW - 60 ? x - 60 : x + 10;
+    const textY = y - 10 < 20 ? y + 20 : y - 10;
+    
+    //ctx.fillText(`${item.begin} \xa0\xa0 O${item.open} \xa0\xa0 H${item.high} \xa0\xa0 L${item.low} \xa0\xa0 C${item.close}`, 20, 20);
+	drawText(item);
+}
+
+
+function drawText(item) {
+    const x = 20;
+    let currentY = 30;
+    
+    overlayCtx.font = 'bold 18px Arial'; // Base font for regular text
+    overlayCtx.fillStyle = 'orange'; // Color for regular text
+
+    // Draw the begin time
+	overlayCtx.fillText(`${item.begin}`, x-8, currentY);
+    
+	// Function to draw highlighted letters
+    function drawHighlightedLetter(letter, value, color) {
+		currentY += 30;
+		let currentX = 10;
+        overlayCtx.font = 'bold 18px Arial'; // Larger, bold font for highlighted letters
+        overlayCtx.fillStyle = 'orange';
+        overlayCtx.fillText(letter, currentX, currentY);
+        //currentX += ctx.measureText(letter).width;
+		currentX += 20;
+		//console.log(">", ctx.measureText(letter).width);
+
+        overlayCtx.font = 'bold 16px Arial'; // Reset to base font
+        overlayCtx.fillStyle = "black";
+        overlayCtx.fillText(value, currentX, currentY);
+        currentX += 60;
+		
+    }
+	
+	// Draw each part with highlighted letter
+    drawHighlightedLetter('H ', item.high);
+	drawHighlightedLetter('O ', item.open);
+    drawHighlightedLetter('C ', item.close + '  ' + pctChange(item.close, prev_item.close));
+	drawHighlightedLetter('L ', item.low);
+    drawHighlightedLetter('V ', M(item.value)+' млн. руб.');
+}
+
+
+function printPriceText(x, y, priceText){
+	// Draw coordinates as text
+    overlayCtx.font = '14px Arial';
+    overlayCtx.fillStyle = 'white';
+	
+	priceText = Math.round(priceText * 10) / 10;
+    overlayCtx.fillText(`${priceText}`, CW-margin.right+30, y+5);
+}
+
+function printDateText(x, y, dateText){
+	// Draw coordinates as text
+    overlayCtx.font = 'bold 14px Arial';
+    overlayCtx.fillStyle = 'white';
+	
+	overlayCtx.fillText(`${dateText}`, x+10, CH-margin.bottom+20);
+}
+
+function printLastPrice(x, y, lastPrice, color='#36454F'){
+	// Draw coordinates as text
+    ctx.font = '14px Arial';
+    ctx.fillStyle = color;
+	
+    ctx.fillText(`${lastPrice}`, x, y);
+}
+
+function drawRectHighlight(y, color='#FFC000'){
+	ctx.fillStyle = color;
+	ctx.beginPath();
+	ctx.rect(CW-margin.right+15, y-15, 110, 25);
+	ctx.fill();
+}
+
+function drawRectHighlight2(y){
+	overlayCtx.fillStyle = 'black';
+	overlayCtx.beginPath();
+	overlayCtx.rect(CW-margin.right+25, y-12, 50, 24);
+	overlayCtx.fill();
+}
+
+function drawRectHighlight3(x){
+	overlayCtx.fillStyle = 'black';
+	overlayCtx.beginPath();
+	overlayCtx.rect(x, CH-margin.bottom+3, 90, 25);
+	overlayCtx.fill();
+}
+
+function drawYGridLines(grids){
+	// Clear the canvas
+    //ctx.clearRect(0, 0, canvas.width, canvas.height);
+	//ctx.putImageData(backgroundImage, 0, 0);
+    ctx.strokeStyle = '#d7d7d7';
+    ctx.lineWidth = 1;
+	
+	ctx.setLineDash([5, 5]);
+	grids.ticks().forEach(d => {
+		// Draw horizontal line
+		ctx.beginPath();
+		ctx.moveTo(margin.left, grids(d));
+		ctx.lineTo(CW-margin.right+20, grids(d));
+		ctx.stroke();
+		
+		// price text grids
+		ctx.font = '14px Arial';
+		ctx.fillStyle = '#43464b';
+		ctx.fillText(`${d}`, CW-margin.right+30, grids(d)+4);
+		
+		ctx.font = '12px Arial';
+		ctx.fillStyle = 'grey';
+		ctx.fillText(`${Math.round((d/last_price-1)*1000)/10}%`, CW-margin.right+70, grids(d)+4);
+	});
+	
+    // Reset the dash pattern
+    ctx.setLineDash([]);
+}
+
+function drawXGridLines(x, x_dates, x_offset){
+	ctx.strokeStyle = '#d7d7d7';
+    ctx.lineWidth = 1;
+	
+	ctx.font = '14px Arial';
+	
+	ctx.setLineDash([5, 5]);
+	x_dates.forEach(d => {
+		// 
+		ctx.beginPath();
+		ctx.moveTo(x(d) + x_offset, CH-margin.bottom);
+		ctx.lineTo(x(d) + x_offset, margin.top);
+		ctx.stroke();
+		
+		// text labels
+		var x_date_label = x_dates_custom_name(d);
+		ctx.fillStyle = 'black';
+		if(x_date_label.length == 4){
+			ctx.fillStyle = '#ff0508';
+		}
+		
+		// date text grids
+		ctx.fillText(`${x_date_label}`, x(d), CH-margin.bottom+20);
+	});
+	
+	// Reset the dash pattern
+    ctx.setLineDash([]);
+	
+}
+
+var month_map = {
+	'01': 'Jan',
+	'02': 'Feb',
+	'03': 'Mar',
+	'04': 'Apr',
+	'05': 'May',
+	'06': 'Jun',
+	'07': 'Jul',
+	'08': 'Aug',
+	'09': 'Sep',
+	'10': 'Oct',
+	'11': 'Nov',
+	'12': 'Dec',
+}
+
+function x_dates_custom_name(dt){
+	var this_month = dt.substring(5, 7);
+	if(this_month == '01'){
+		return dt.substring(0, 4);
+	}else{
+		return month_map[this_month];
+	}
+}
+
+function M(v){
+	return Math.floor(v/1000000);
+}
+
+function pctChange(val, prev_val){
+	let chg = Math.floor((val/prev_val - 1)*10000)/100;
+	return chg > 0 ? '+' + chg + '%' : chg + '%';
+}
+
+
+
+
+</script>
+</body>
+</html>
